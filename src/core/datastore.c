@@ -1,4 +1,4 @@
-#include "../include/datastore.h"
+#include "datastore.h"
 
 struct key_value *store = NULL;
 

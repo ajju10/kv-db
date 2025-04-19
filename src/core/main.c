@@ -1,6 +1,8 @@
 #define SOCKET_NAME "/tmp/keyval.sock"
 #define BUFFER_SIZE 256
 #define WRITE_THRESHOLD 100
+#define LOG_FILE "logs/datastore.log"
+#define TEMP_LOG_FILE "logs/datastore.tmp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,10 +12,13 @@
 #include <unistd.h>
 #include <stdint.h>
 
-#include "../include/datastore.h"
+#include "datastore.h"
 
 FILE *fptr;
 uint8_t write_counter;
+
+// Function prototype
+void ensure_log_file_open(void);
 
 void compact_log_file() {
     // Close the current log file
@@ -22,7 +27,7 @@ void compact_log_file() {
         fptr = NULL;
     }
 
-    FILE *temp_log = fopen("datastore.tmp", "w");
+    FILE *temp_log = fopen(TEMP_LOG_FILE, "w");
     if (temp_log == NULL) {
         perror("Failed to open temp log file");
         ensure_log_file_open();  // Reopen the log file
@@ -37,7 +42,7 @@ void compact_log_file() {
     fflush(temp_log);
     fclose(temp_log);
 
-    if (rename("datastore.tmp", "datastore.log") != 0) {
+    if (rename(TEMP_LOG_FILE, LOG_FILE) != 0) {
         perror("Failed to replace log file");
         return;
     }
@@ -47,7 +52,7 @@ void compact_log_file() {
 
 void ensure_log_file_open() {
     if (fptr == NULL) {
-        fptr = fopen("datastore.log", "a");
+        fptr = fopen(LOG_FILE, "a");
         if (fptr == NULL) {
             perror("Failed to open log file");
             exit(EXIT_FAILURE);
@@ -138,7 +143,7 @@ void handle_invalid_command(char *send_buf, int data_socket) {
 }
 
 void restore_from_log() {
-    FILE *log_file = fopen("datastore.log", "r");
+    FILE *log_file = fopen(LOG_FILE, "r");
     if (log_file == NULL) {
         // If file doesn't exist, just return as this might be first run
         return;
@@ -191,7 +196,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    fptr = fopen("datastore.log", "a");
+    fptr = fopen(LOG_FILE, "a");
     if (fptr == NULL) {
         perror("Failed to open log file");
         exit(EXIT_FAILURE);

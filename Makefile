@@ -1,24 +1,40 @@
 CC = gcc
-CFLAGS = -Iinclude -Wall -Wextra
-SRC = src/main.c src/datastore.c
-OBJ = $(SRC:src/%.c=build/%.o)
-TARGET = build/key_value_store
+CFLAGS = -Wall -Wextra -I$(SRC_DIR)/core
+BUILD_DIR = build
+SRC_DIR = src
+LOG_DIR = logs
+TEST_DIR = tests
 
-all: $(TARGET)
+# Source files
+CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
+UTILS_SRC = $(wildcard $(SRC_DIR)/utils/*.c)
+ALL_SRC = $(CORE_SRC) $(UTILS_SRC)
+
+# Object files
+OBJ = $(ALL_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+# Binary name
+TARGET = $(BUILD_DIR)/key_value_store
+
+.PHONY: all clean run dirs
+
+all: dirs $(TARGET)
+
+dirs:
+	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/utils $(LOG_DIR)
 
 $(TARGET): $(OBJ)
-	@mkdir -p $(dir $@)
 	$(CC) -o $@ $^
-	rm -f $(OBJ)
 
-build/%.o: src/%.c
+# Pattern rule for object files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: $(TARGET)
 	./$(TARGET)
 
+# Clean only build artifacts, preserve logs
 clean:
-	rm -f $(OBJ) $(TARGET)
-
-.PHONY: all clean run
+	rm -rf $(BUILD_DIR)/*
+	@echo "Cleaned build artifacts (logs preserved)"

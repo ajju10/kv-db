@@ -1,7 +1,7 @@
 #ifndef DATASTORE_H
 #define DATASTORE_H
 
-#include "../lib/uthash.h"
+#include "../../lib/uthash.h"
 
 struct key_value {
     char *key;
