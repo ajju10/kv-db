@@ -1,5 +1,6 @@
 #define SOCKET_NAME "/tmp/keyval.sock"
 #define BUFFER_SIZE 256
+#define WRITE_THRESHOLD 100
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,10 +8,42 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include "../include/datastore.h"
 
 FILE *fptr;
+uint8_t write_counter;
+
+void compact_log_file() {
+    // Close the current log file
+    if (fptr != NULL) {
+        fclose(fptr);
+        fptr = NULL;
+    }
+
+    FILE *temp_log = fopen("datastore.tmp", "w");
+    if (temp_log == NULL) {
+        perror("Failed to open temp log file");
+        ensure_log_file_open();  // Reopen the log file
+        return;
+    }
+
+    struct key_value *entry, *tmp;
+    HASH_ITER(hh, store, entry, tmp) {
+        fprintf(temp_log, "PUT %s %s\n", entry->key, entry->value);
+    }
+
+    fflush(temp_log);
+    fclose(temp_log);
+
+    if (rename("datastore.tmp", "datastore.log") != 0) {
+        perror("Failed to replace log file");
+        return;
+    }
+
+    write_counter = 0;
+}
 
 void ensure_log_file_open() {
     if (fptr == NULL) {
@@ -148,6 +181,8 @@ int main() {
     char buffer[BUFFER_SIZE];
     char send_buf[BUFFER_SIZE];
 
+    write_counter = 0;
+
     unlink(SOCKET_NAME);
 
     listen_socket = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -205,16 +240,21 @@ int main() {
 
             if (strncmp(buffer, "PUT", 3) == 0) {
                 handle_put(buffer, send_buf, data_socket);
+                write_counter++;
             } else if (strncmp(buffer, "GET", 3) == 0) {
                 handle_get(buffer, send_buf, data_socket);
             } else if (strncmp(buffer, "DELETE", 6) == 0) {
                 handle_delete(buffer, send_buf, data_socket);
+                write_counter++;
             } else {
                 handle_invalid_command(send_buf, data_socket);
             }
 
             memset(buffer, 0, BUFFER_SIZE); 
             memset(send_buf, 0, BUFFER_SIZE);
+
+            if (write_counter >= WRITE_THRESHOLD)
+                compact_log_file();
         }
 
         close(data_socket);
