@@ -62,7 +62,7 @@ void ensure_log_file_open() {
 }
 
 void handle_close(int data_socket, char *send_buf) {
-    strncpy(send_buf, "Closing connection...", BUFFER_SIZE);
+    strncpy(send_buf, "BYE\n", BUFFER_SIZE);
     write(data_socket, send_buf, BUFFER_SIZE);
     close(data_socket);
     printf("Socket closed\n");
@@ -84,14 +84,14 @@ void handle_put(char *buffer, char *send_buf, int data_socket) {
             fflush(fptr);  // Ensure data is written to disk
             set_key_value(key, value);
 
-            strncpy(send_buf, "success", BUFFER_SIZE);
+            strncpy(send_buf, "OK\n", BUFFER_SIZE);
         } else {
             printf("Value missing for PUT command\n");
-            strncpy(send_buf, "failure", BUFFER_SIZE);
+            strncpy(send_buf, "failure\n", BUFFER_SIZE);
         }
     } else {
         printf("Key missing for PUT command\n");
-        strncpy(send_buf, "invalid command expected PUT <key> <value>", BUFFER_SIZE);
+        strncpy(send_buf, "invalid command expected PUT <key> <value>\n", BUFFER_SIZE);
     }
     write(data_socket, send_buf, BUFFER_SIZE);
 }
@@ -105,13 +105,13 @@ void handle_get(char *buffer, char *send_buf, int data_socket) {
         key = tokens;
         char *value = get_key(key);
         if (value == NULL) {
-            strncpy(send_buf, "Key not found", BUFFER_SIZE);
+            strncpy(send_buf, "\n", BUFFER_SIZE);  // Empty line for non-existent key
         } else {
-            strncpy(send_buf, value, BUFFER_SIZE);
+            snprintf(send_buf, BUFFER_SIZE, "%s\n", value);  // Value followed by newline
         }
     } else {
         printf("No key found for GET\n");
-        strncpy(send_buf, "invalid command expected GET <key>", BUFFER_SIZE);
+        strncpy(send_buf, "invalid command expected GET <key>\n", BUFFER_SIZE);
     }
     write(data_socket, send_buf, BUFFER_SIZE);
 }
@@ -122,16 +122,20 @@ void handle_delete(char *buffer, char *send_buf, int data_socket) {
     tokens = strtok(NULL, " ");
     if (tokens) {
         key = tokens;
-
-        ensure_log_file_open();
-        fprintf(fptr, "DELETE %s\n", key);
-        fflush(fptr);  // Ensure data is written to disk
-        purge_key(key);
-
-        strncpy(send_buf, "success", BUFFER_SIZE);
+        char *value = get_key(key);
+        
+        if (value == NULL) {
+            strncpy(send_buf, "NOT FOUND\n", BUFFER_SIZE);
+        } else {
+            ensure_log_file_open();
+            fprintf(fptr, "DELETE %s\n", key);
+            fflush(fptr);  // Ensure data is written to disk
+            purge_key(key);
+            strncpy(send_buf, "OK\n", BUFFER_SIZE);
+        }
     } else {
         printf("Key missing for DELETE command\n");
-        strncpy(send_buf, "invalid command expected DELETE <key>", BUFFER_SIZE);
+        strncpy(send_buf, "invalid command expected DELETE <key>\n", BUFFER_SIZE);
     }
     write(data_socket, send_buf, BUFFER_SIZE);
 }

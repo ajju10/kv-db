@@ -1,38 +1,51 @@
-# c-project
+# Protocol Specification
 
-This project is a simple C application that demonstrates the use of utility functions. It consists of a main program and a set of utility functions that can be reused across different parts of the application.
+This document describes the protocol for interacting with the key-value store server.
 
-## Project Structure
+## Commands
 
+### PUT
+Used to store a value associated with a key.
 ```
-c-project
-├── src
-│   ├── main.c        # Entry point of the application
-│   └── utils.c       # Implementation of utility functions
-├── include
-│   └── utils.h       # Header file for utility functions
-├── Makefile          # Build instructions
-└── README.md         # Project documentation
+Command: PUT key value\n
+Response: OK\n
 ```
+- Both key and value are strings
+- The command must end with a newline character
+- Server responds with "OK" followed by a newline on successful storage
 
-## Building the Project
-
-To build the project, navigate to the project directory and run the following command:
-
+### GET
+Retrieves the value associated with a given key.
 ```
-make
+Command: GET key\n
+Response: value\n
 ```
+- The key must be a string
+- The command must end with a newline character
+- Server responds with the stored value followed by a newline
+- If the key doesn't exist, an empty line is returned
 
-This will compile the source files and create an executable.
-
-## Running the Application
-
-After building the project, you can run the application with the following command:
-
+### DELETE
+Removes a key-value pair from the store.
 ```
-./c-project
+Command: DELETE key\n
+Response: NOT FOUND\n
 ```
+- The key must be a string
+- The command must end with a newline character
+- Server responds with "NOT FOUND" followed by a newline if the key doesn't exist
+- On successful deletion, returns "OK" followed by a newline
 
-## Contributing
+### CLOSE
+Closes the current connection to the server.
+```
+Command: CLOSE\n
+Response: BYE\n
+```
+- The command must end with a newline character
+- Server responds with "BYE" followed by a newline
+- After sending the response, the server closes the connection
+- Any subsequent commands on this connection will fail as the connection is closed
 
-Feel free to contribute to this project by submitting issues or pull requests.
+## Note
+All commands and responses are terminated with a newline character (\n).
