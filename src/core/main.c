@@ -125,7 +125,7 @@ void handle_delete(char *buffer, char *send_buf, int data_socket) {
         char *value = get_key(key);
         
         if (value == NULL) {
-            strncpy(send_buf, "NOT FOUND\n", BUFFER_SIZE);
+            strncpy(send_buf, "NOT_FOUND\n", BUFFER_SIZE);
         } else {
             ensure_log_file_open();
             fprintf(fptr, "DELETE %s\n", key);

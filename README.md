@@ -29,11 +29,11 @@ Response: value\n
 Removes a key-value pair from the store.
 ```
 Command: DELETE key\n
-Response: NOT FOUND\n
+Response: NOT_FOUND\n
 ```
 - The key must be a string
 - The command must end with a newline character
-- Server responds with "NOT FOUND" followed by a newline if the key doesn't exist
+- Server responds with "NOT_FOUND" followed by a newline if the key doesn't exist
 - On successful deletion, returns "OK" followed by a newline
 
 ### CLOSE
