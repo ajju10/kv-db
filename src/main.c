@@ -104,6 +104,34 @@ void handle_invalid_command(char *send_buf, int data_socket) {
     write(data_socket, send_buf, BUFFER_SIZE);
 }
 
+void restore_from_log() {
+    FILE *log_file = fopen("datastore.log", "r");
+    if (log_file == NULL) {
+        // If file doesn't exist, just return as this might be first run
+        return;
+    }
+
+    char line[BUFFER_SIZE];
+    while (fgets(line, sizeof(line), log_file)) {
+        // Remove newline if present
+        line[strcspn(line, "\n")] = 0;
+        
+        char command[10];
+        char key[BUFFER_SIZE];
+        char value[BUFFER_SIZE];
+
+        if (sscanf(line, "%s %s %[^\n]", command, key, value) >= 2) {
+            if (strcmp(command, "PUT") == 0) {
+                set_key_value(key, value);
+            } else if (strcmp(command, "DELETE") == 0) {
+                purge_key(key);
+            }
+        }
+    }
+    fclose(log_file);
+    printf("State restored from log file\n");
+}
+
 int main() {
     printf("Welcome to the Key-Value Store!\n");
     printf("Server is starting...\n");
@@ -153,6 +181,8 @@ int main() {
         perror("Listen error");
         exit(EXIT_FAILURE);
     }
+
+    restore_from_log();
 
     while (1) {
         data_socket = accept(listen_socket, NULL, NULL);
