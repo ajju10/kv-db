@@ -10,6 +10,19 @@
 
 #include "../include/datastore.h"
 
+FILE *fptr;
+
+void ensure_log_file_open() {
+    if (fptr == NULL) {
+        fptr = fopen("datastore.log", "a");
+        if (fptr == NULL) {
+            perror("Failed to open log file");
+            exit(EXIT_FAILURE);
+        }
+        setvbuf(fptr, NULL, _IONBF, 0);  // Disable buffering
+    }
+}
+
 void handle_close(int data_socket, char *send_buf) {
     strncpy(send_buf, "Closing connection...", BUFFER_SIZE);
     write(data_socket, send_buf, BUFFER_SIZE);
@@ -27,6 +40,10 @@ void handle_put(char *buffer, char *send_buf, int data_socket) {
         if (tokens) {
             value = tokens;
             printf("Key: %s, Value: %s\n", key, value);
+
+            ensure_log_file_open();
+            fprintf(fptr, "PUT %s %s\n", key, value);
+            fflush(fptr);  // Ensure data is written to disk
             set_key_value(key, value);
 
             strncpy(send_buf, "success", BUFFER_SIZE);
@@ -67,7 +84,12 @@ void handle_delete(char *buffer, char *send_buf, int data_socket) {
     tokens = strtok(NULL, " ");
     if (tokens) {
         key = tokens;
+
+        ensure_log_file_open();
+        fprintf(fptr, "DELETE %s\n", key);
+        fflush(fptr);  // Ensure data is written to disk
         purge_key(key);
+
         strncpy(send_buf, "success", BUFFER_SIZE);
     } else {
         printf("Key missing for DELETE command\n");
@@ -106,6 +128,13 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    fptr = fopen("datastore.log", "a");
+    if (fptr == NULL) {
+        perror("Failed to open log file");
+        exit(EXIT_FAILURE);
+    }
+    setvbuf(fptr, NULL, _IONBF, 0);
+
     memset(&addr, 0, sizeof(struct sockaddr_un));
     memset(&buffer, 0, BUFFER_SIZE);
     memset(&send_buf, 0, BUFFER_SIZE);
@@ -139,8 +168,9 @@ int main() {
                 exit(EXIT_FAILURE);
             }
 
-            if (strncmp(buffer, "CLOSE", 5) == 0) {
+            if (ret == 0 || strncmp(buffer, "CLOSE", 5) == 0) {
                 handle_close(data_socket, send_buf);
+                break;
             }
 
             if (strncmp(buffer, "PUT", 3) == 0) {
@@ -153,7 +183,7 @@ int main() {
                 handle_invalid_command(send_buf, data_socket);
             }
 
-            memset(buffer, 0, BUFFER_SIZE); // Clear the buffer for the next command
+            memset(buffer, 0, BUFFER_SIZE); 
             memset(send_buf, 0, BUFFER_SIZE);
         }
 
@@ -161,6 +191,7 @@ int main() {
     }
 
     close(listen_socket);
+    fclose(fptr);
     unlink(SOCKET_NAME);
     printf("Socket unlinked\n");
     printf("Server shutting down...\n");
