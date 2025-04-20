@@ -7,8 +7,8 @@ TEST_DIR = tests
 
 # Source files
 CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
-UTILS_SRC = $(wildcard $(SRC_DIR)/utils/*.c)
-ALL_SRC = $(CORE_SRC) $(UTILS_SRC)
+UNIX_TRANSPORT_SRC = $(wildcard $(SRC_DIR)/transport/unix/*.c)
+ALL_SRC = $(CORE_SRC) $(UNIX_TRANSPORT_SRC)
 
 # Object files
 OBJ = $(ALL_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)

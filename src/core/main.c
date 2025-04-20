@@ -1,9 +1,3 @@
-#define SOCKET_NAME "/tmp/keyval.sock"
-#define BUFFER_SIZE 256
-#define WRITE_THRESHOLD 100
-#define LOG_FILE "logs/datastore.log"
-#define TEMP_LOG_FILE "logs/datastore.tmp"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,14 +5,27 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <stdint.h>
-
 #include "datastore.h"
+#include "../transport/unix/unix_transport.h"
+
+#define BUFFER_SIZE 256
+#define WRITE_THRESHOLD 100
+#define LOG_FILE "logs/datastore.log"
+#define TEMP_LOG_FILE "logs/datastore.tmp"
 
 FILE *fptr;
 uint8_t write_counter;
 
-// Function prototype
-void ensure_log_file_open(void);
+void ensure_log_file_open() {
+    if (fptr == NULL) {
+        fptr = fopen(LOG_FILE, "a");
+        if (fptr == NULL) {
+            perror("Failed to open log file");
+            exit(EXIT_FAILURE);
+        }
+        setvbuf(fptr, NULL, _IONBF, 0);  // Disable buffering
+    }
+}
 
 void compact_log_file() {
     // Close the current log file
@@ -50,25 +57,14 @@ void compact_log_file() {
     write_counter = 0;
 }
 
-void ensure_log_file_open() {
-    if (fptr == NULL) {
-        fptr = fopen(LOG_FILE, "a");
-        if (fptr == NULL) {
-            perror("Failed to open log file");
-            exit(EXIT_FAILURE);
-        }
-        setvbuf(fptr, NULL, _IONBF, 0);  // Disable buffering
-    }
-}
-
-void handle_close(int data_socket, char *send_buf) {
+void handle_close(int client_fd, char *send_buf) {
     strncpy(send_buf, "BYE\n", BUFFER_SIZE);
-    write(data_socket, send_buf, BUFFER_SIZE);
-    close(data_socket);
+    write(client_fd, send_buf, BUFFER_SIZE);
+    close(client_fd);
     printf("Socket closed\n");
 }
 
-void handle_put(char *buffer, char *send_buf, int data_socket) {
+void handle_put(char *buffer, char *send_buf, int client_fd) {
     char *key, *value;
     char *tokens = strtok(buffer, " ");
     tokens = strtok(NULL, " ");
@@ -93,10 +89,10 @@ void handle_put(char *buffer, char *send_buf, int data_socket) {
         printf("Key missing for PUT command\n");
         strncpy(send_buf, "invalid command expected PUT <key> <value>\n", BUFFER_SIZE);
     }
-    write(data_socket, send_buf, BUFFER_SIZE);
+    write(client_fd, send_buf, BUFFER_SIZE);
 }
 
-void handle_get(char *buffer, char *send_buf, int data_socket) {
+void handle_get(char *buffer, char *send_buf, int client_fd) {
     char *key;
     char *tokens = strtok(buffer, " ");
 
@@ -113,10 +109,10 @@ void handle_get(char *buffer, char *send_buf, int data_socket) {
         printf("No key found for GET\n");
         strncpy(send_buf, "invalid command expected GET <key>\n", BUFFER_SIZE);
     }
-    write(data_socket, send_buf, BUFFER_SIZE);
+    write(client_fd, send_buf, BUFFER_SIZE);
 }
 
-void handle_delete(char *buffer, char *send_buf, int data_socket) {
+void handle_delete(char *buffer, char *send_buf, int client_fd) {
     char *key;
     char *tokens = strtok(buffer, " ");
     tokens = strtok(NULL, " ");
@@ -137,13 +133,13 @@ void handle_delete(char *buffer, char *send_buf, int data_socket) {
         printf("Key missing for DELETE command\n");
         strncpy(send_buf, "invalid command expected DELETE <key>\n", BUFFER_SIZE);
     }
-    write(data_socket, send_buf, BUFFER_SIZE);
+    write(client_fd, send_buf, BUFFER_SIZE);
 }
 
-void handle_invalid_command(char *send_buf, int data_socket) {
+void handle_invalid_command(char *send_buf, int client_fd) {
     printf("Invalid command\n");
     strncpy(send_buf, "Invalid command\n", BUFFER_SIZE);
-    write(data_socket, send_buf, BUFFER_SIZE);
+    write(client_fd, send_buf, BUFFER_SIZE);
 }
 
 void restore_from_log() {
@@ -176,29 +172,18 @@ void restore_from_log() {
 
 int main() {
     printf("Welcome to the Key-Value Store!\n");
-    printf("Server is starting...\n");
-    printf("Listening on socket: %s\n", SOCKET_NAME);
     printf("Commands:\n");
     printf("  PUT <key> <value> - Store a key-value pair\n");
     printf("  GET <key> - Retrieve the value for a key\n");
     printf("  DELETE <key> - Remove a key-value pair\n");
     printf("  CLOSE - Close the connection\n");
-    struct sockaddr_un addr;
-    int ret;
-    int listen_socket;
-    int data_socket;
+
+    unix_init();
+
     char buffer[BUFFER_SIZE];
     char send_buf[BUFFER_SIZE];
 
     write_counter = 0;
-
-    unlink(SOCKET_NAME);
-
-    listen_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (listen_socket == -1) {
-        perror("Socket initialization failed");
-        exit(EXIT_FAILURE);
-    }
 
     fptr = fopen(LOG_FILE, "a");
     if (fptr == NULL) {
@@ -206,57 +191,40 @@ int main() {
         exit(EXIT_FAILURE);
     }
     setvbuf(fptr, NULL, _IONBF, 0);
-
-    memset(&addr, 0, sizeof(struct sockaddr_un));
+    
     memset(&buffer, 0, BUFFER_SIZE);
     memset(&send_buf, 0, BUFFER_SIZE);
-
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_NAME, sizeof(addr.sun_path) - 1);
-
-    ret = bind(listen_socket, (const struct sockaddr*) &addr, sizeof(struct sockaddr_un));
-    if (ret == -1) {
-        perror("Error while binding");
-        exit(EXIT_FAILURE);
-    }
-
-    ret = listen(listen_socket, 20);
-    if (ret == -1) {
-        perror("Listen error");
-        exit(EXIT_FAILURE);
-    }
 
     restore_from_log();
 
     while (1) {
-        data_socket = accept(listen_socket, NULL, NULL);
-        if (data_socket == -1) {
-            perror("Accept failure");
-            exit(EXIT_FAILURE);
+        int client_fd = unix_accept();
+        if (client_fd < 0) {
+            continue;
         }
 
         while (1) {
-            ret = read(data_socket, buffer, BUFFER_SIZE);
+            int ret = read(client_fd, buffer, BUFFER_SIZE);
             if (ret == -1) {
                 perror("Read failure");
                 exit(EXIT_FAILURE);
             }
 
             if (ret == 0 || strncmp(buffer, "CLOSE", 5) == 0) {
-                handle_close(data_socket, send_buf);
+                handle_close(client_fd, send_buf);
                 break;
             }
 
             if (strncmp(buffer, "PUT", 3) == 0) {
-                handle_put(buffer, send_buf, data_socket);
+                handle_put(buffer, send_buf, client_fd);
                 write_counter++;
             } else if (strncmp(buffer, "GET", 3) == 0) {
-                handle_get(buffer, send_buf, data_socket);
+                handle_get(buffer, send_buf, client_fd);
             } else if (strncmp(buffer, "DELETE", 6) == 0) {
-                handle_delete(buffer, send_buf, data_socket);
+                handle_delete(buffer, send_buf, client_fd);
                 write_counter++;
             } else {
-                handle_invalid_command(send_buf, data_socket);
+                handle_invalid_command(send_buf, client_fd);
             }
 
             memset(buffer, 0, BUFFER_SIZE); 
@@ -266,14 +234,10 @@ int main() {
                 compact_log_file();
         }
 
-        close(data_socket);
+        close(client_fd);
     }
 
-    close(listen_socket);
+    unix_close();
     fclose(fptr);
-    unlink(SOCKET_NAME);
-    printf("Socket unlinked\n");
-    printf("Server shutting down...\n");
-
     return 0;
 }
