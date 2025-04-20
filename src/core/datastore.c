@@ -16,12 +16,10 @@ void kv_init() {
     write_counter = 0;
     replay_log();
     open_log_file();
-    unix_init();
 }
 
 void kv_shutdown() {
     fclose(fptr);
-    unix_close();
 }
 
 char *kv_get(const char *key) {
