@@ -3,13 +3,11 @@
 
 #include "../../lib/uthash.h"
 
-struct key_value {
+typedef struct db_entry {
     char *key;
     char *value;
     UT_hash_handle hh;
-};
-
-extern struct key_value *store;
+} db_entry_t;
 
 void kv_init();
 
@@ -28,11 +26,5 @@ void kv_compact();
 void replay_log();
 
 void write_log(const char *command);
-
-char* get_key(char* key);
-
-void set_key_value(char* key, char* value);
-
-void purge_key(char* key);
 
 #endif

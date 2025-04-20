@@ -7,7 +7,7 @@
 #define LOG_FILE "logs/datastore.log"
 #define TEMP_LOG_FILE "logs/datastore.tmp"
 
-struct key_value *store = NULL;
+db_entry_t *store = NULL;
 
 FILE *fptr;
 int write_counter;
@@ -23,14 +23,14 @@ void kv_shutdown() {
 }
 
 char *kv_get(const char *key) {
-    struct key_value *entry;
+    db_entry_t *entry;
     HASH_FIND_STR(store, key, entry);
     return entry ? entry->value : "";
 }
 
 int kv_put(const char *key, const char *value) {
     char log_buffer[BUFFER_SIZE];
-    struct key_value *entry;
+    db_entry_t *entry;
 
     HASH_FIND_STR(store, key, entry);
     if (entry) {
@@ -41,7 +41,7 @@ int kv_put(const char *key, const char *value) {
         return entry->value ? 0 : -1;
     }
 
-    entry = malloc(sizeof(struct key_value));
+    entry = malloc(sizeof(db_entry_t));
     if (!entry) return -1;
 
     sprintf(log_buffer, "PUT %s %s\n", key, value);
@@ -54,7 +54,7 @@ int kv_put(const char *key, const char *value) {
 
 int kv_delete(const char *key) {
     char log_buffer[BUFFER_SIZE];
-    struct key_value *entry;
+    db_entry_t *entry;
 
     HASH_FIND_STR(store, key, entry);
     if (entry) {
@@ -92,7 +92,7 @@ void kv_compact() {
         return;
     }
 
-    struct key_value *entry, *tmp;
+    db_entry_t *entry, *tmp;
     HASH_ITER(hh, store, entry, tmp) {
         fprintf(temp_log, "PUT %s %s\n", entry->key, entry->value);
     }
