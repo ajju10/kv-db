@@ -5,13 +5,16 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include "server.h"
 #include "command_handler.h"
 
 int connected_clients = 0;
 
-void handle_tcp_client(int client_fd) {
+void *handle_tcp_client(void *arg) {
     char buf[BUFFER_SIZE];
+    int client_fd = (int)(intptr_t)arg;
+
     while (1) {
         memset(buf, 0, sizeof(buf));
         
@@ -20,7 +23,7 @@ void handle_tcp_client(int client_fd) {
             connected_clients--;
             printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
             close(client_fd);
-            return;
+            return NULL;
         }
 
         printf("Data received: %s", buf);
@@ -32,7 +35,7 @@ void handle_tcp_client(int client_fd) {
             connected_clients--;
             printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
             close(client_fd);
-            return;
+            return NULL;
         }
     }
 }
@@ -81,8 +84,12 @@ void start_tcp_server() {
 
         connected_clients++;
         printf("Client connected, total connected clients: %d\n", connected_clients);
-        handle_tcp_client(client_fd);
+
+        pthread_t tid;
+        pthread_create(&tid, NULL, handle_tcp_client, (void *)(intptr_t)client_fd);
+        pthread_detach(tid);
     }
 
     close(server_fd);
 }
+
