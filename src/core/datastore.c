@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <stdio.h>
 #include "datastore.h"
 #include "../transport/unix/unix_transport.h"
@@ -8,6 +9,8 @@
 #define TEMP_LOG_FILE "logs/datastore.tmp"
 
 db_entry_t *store = NULL;
+
+pthread_mutex_t store_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 FILE *fptr;
 int write_counter;
@@ -23,21 +26,25 @@ void kv_shutdown() {
 }
 
 char *kv_get(const char *key) {
+    pthread_mutex_lock(&store_mutex);
     db_entry_t *entry;
     HASH_FIND_STR(store, key, entry);
+    pthread_mutex_unlock(&store_mutex);
     return entry ? entry->value : "";
 }
 
 int kv_put(const char *key, const char *value) {
+    pthread_mutex_lock(&store_mutex);  
     char log_buffer[BUFFER_SIZE];
     db_entry_t *entry;
-
+    
     HASH_FIND_STR(store, key, entry);
     if (entry) {
         sprintf(log_buffer, "PUT %s %s\n", key, value);
         write_log(log_buffer);
         free(entry->value);
         entry->value = strdup(value);
+        pthread_mutex_unlock(&store_mutex);
         return entry->value ? 0 : -1;
     }
 
@@ -49,10 +56,12 @@ int kv_put(const char *key, const char *value) {
     entry->key = strdup(key);
     entry->value = strdup(value);
     HASH_ADD_KEYPTR(hh, store, entry->key, strlen(entry->key), entry);
+    pthread_mutex_unlock(&store_mutex);
     return 0;
 }
 
 int kv_delete(const char *key) {
+    pthread_mutex_lock(&store_mutex);
     char log_buffer[BUFFER_SIZE];
     db_entry_t *entry;
 
@@ -64,8 +73,11 @@ int kv_delete(const char *key) {
         free(entry->key);
         free(entry->value);
         free(entry);
+        pthread_mutex_unlock(&store_mutex);
         return 0;
     }
+
+    pthread_mutex_unlock(&store_mutex);
     return 1;
 }
 
@@ -140,3 +152,4 @@ void write_log(const char *command) {
     if (write_counter >= WRITE_THRESHOLD)
         kv_compact();
 }
+
