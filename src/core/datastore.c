@@ -1,7 +1,6 @@
 #include <pthread.h>
 #include <stdio.h>
 #include "datastore.h"
-#include "../transport/unix/unix_transport.h"
 
 #define BUFFER_SIZE 256
 #define WRITE_THRESHOLD 100
