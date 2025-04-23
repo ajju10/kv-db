@@ -8,14 +8,13 @@ TEST_DIR = tests
 # Source files
 CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
 SERVER_SRC = $(wildcard $(SRC_DIR)/server/*.c)
-UNIX_TRANSPORT_SRC = $(wildcard $(SRC_DIR)/transport/unix/*.c)
-ALL_SRC = $(CORE_SRC) $(UNIX_TRANSPORT_SRC) $(SERVER_SRC)
+ALL_SRC = $(CORE_SRC) $(SERVER_SRC)
 
 # Object files
 OBJ = $(ALL_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Binary name
-TARGET = $(BUILD_DIR)/key_value_store
+TARGET = $(BUILD_DIR)/keyval
 
 .PHONY: all clean run dirs
 
