@@ -5,6 +5,7 @@
 
 void parse_args(int argc, char *argv[], config_t *config) {
     strcpy(config->role, "leader");
+    config->id = 1;
     config->port = 5000;
     strcpy(config->leader_host, "127.0.0.1");
     config->leader_port = 5000;
@@ -12,6 +13,8 @@ void parse_args(int argc, char *argv[], config_t *config) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--role") == 0 && i + 1 < argc) {
             strncpy(config->role, argv[++i], sizeof(config->role) - 1);
+        } else if (strcmp(argv[i], "--id") == 0 && i + 1 < argc) {
+            config->id = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
             config->port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--leader_host") == 0 && i + 1 < argc) {
@@ -43,7 +46,7 @@ int main(int argc, char *argv[]) {
         kv_shutdown();
     } else {
         printf("Starting as follower on port %d, connecting to leader at %s:%d\n", config.port, config.leader_host, config.leader_port);
-        start_follower_server(config.port, config.leader_host, config.leader_port);
+        start_follower_server(config.port, config.leader_host, config.leader_port, config.id);
     }
 
     return 0;

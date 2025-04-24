@@ -12,10 +12,15 @@
 
 #define MAX_FOLLOWERS 10
 
+typedef struct follower {
+    int id;
+    int fd;
+} follower_t;
+
 static config_t server_config;
 int connected_clients = 0;
 
-int followers[MAX_FOLLOWERS] = {0};
+follower_t followers[MAX_FOLLOWERS] = {0};
 
 void set_server_config(const config_t *config) {
     memcpy(&server_config, config, sizeof(config_t));
@@ -31,11 +36,14 @@ static const char *get_shared_secret() {
     return secret;
 }
 
-static void add_follower_to_list(int socket_fd) {
+static void add_follower_to_list(int id, int socket_fd) {
     char handshake_res[128] = {0};
     for (int i = 0; i < MAX_FOLLOWERS; i++) {
-        if (followers[i] == 0) {
-            followers[i] = socket_fd;
+        if (followers[i].id == 0) {
+            follower_t follower_conf = {0};
+            follower_conf.id = id;
+            follower_conf.fd = socket_fd;
+            followers[i] = follower_conf;
             strcpy(handshake_res, "OK\n");
             send(socket_fd, handshake_res, sizeof(handshake_res), 0);
             return;
@@ -50,8 +58,8 @@ static void add_follower_to_list(int socket_fd) {
 
 static void broadcast_to_followers(const char *message) {
     for (int i = 0; i < MAX_FOLLOWERS; i++) {
-        if (followers[i] != 0) {
-            send(followers[i], message, strlen(message), 0);
+        if (followers[i].id != 0) {
+            send(followers[i].fd, message, strlen(message), 0);
         }
     }
 }
@@ -80,12 +88,22 @@ void *handle_client(void *arg) {
     if (strncmp("HELLO CLIENT\n", handshake_msg, 13) == 0) {
         printf("Client handshake completed\n");
     } else if (strncmp("HELLO FOLLOWER|", handshake_msg, 15) == 0) {
+        char *hello_msg = strchr(handshake_msg, '|') + 1;
+        int follower_id = 0;
+        while (*hello_msg && *hello_msg != ':') {
+            follower_id = follower_id * 10 + (*hello_msg - '0');
+            hello_msg++;
+        }
+        hello_msg++;
+        printf("Follower id: %d, ", follower_id);
+
         const char *follower_secret = get_shared_secret();
-        char *token = strchr(handshake_msg, '|') + 1;
+        char *token = hello_msg;
         token[strcspn(token, "\n")] = '\0';
+        printf("Follower token: %s\n", token);
         if (strcmp(token, follower_secret) == 0) {
             printf("Follower authenticated, handshake completed\n");
-            add_follower_to_list(client_fd);
+            add_follower_to_list(follower_id, client_fd);
             return NULL;
         } else {
             printf("Follower rejected: invalid secret key\n");
@@ -192,7 +210,7 @@ void start_leader_server(int port) {
     start_tcp_server(port);
 }
 
-int connect_with_leader_server(const char *leader_host, int leader_port) {
+int connect_with_leader_server(const char *leader_host, int leader_port, int follower_id) {
     char handshake_buf[128] = {0};
     struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
@@ -217,7 +235,7 @@ int connect_with_leader_server(const char *leader_host, int leader_port) {
     // Initiate handshake
     printf("Initiating handshake with leader...\n");
     const char *follower_secret = get_shared_secret();
-    snprintf(handshake_buf, sizeof(handshake_buf), "HELLO FOLLOWER|%s\n", follower_secret);
+    snprintf(handshake_buf, sizeof(handshake_buf), "HELLO FOLLOWER|%d:%s\n", follower_id, follower_secret);
     send(socket_fd, handshake_buf, sizeof(handshake_buf), 0);
 
     memset(handshake_buf, 0, sizeof(handshake_buf));
@@ -249,8 +267,13 @@ static void *handle_leader(void *arg) {
     return NULL;
 }
 
-void start_follower_server(int port, const char *leader_host, int leader_port) {
-    int leader_socket_fd = connect_with_leader_server(leader_host, leader_port);
+void start_follower_server(int port, const char *leader_host, int leader_port, int id) {
+    if (id == 1) {
+        fprintf(stderr, "ID 1 is reserved for leader, please choose a different one\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int leader_socket_fd = connect_with_leader_server(leader_host, leader_port, id);
 
     // Spawn new thread for leader communication
     pthread_t tid;
