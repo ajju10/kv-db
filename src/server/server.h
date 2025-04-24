@@ -1,9 +1,16 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-void *handle_client(void *arg);
+typedef struct config {
+    char role[10];
+    int port;
+    char leader_host[64];
+    int leader_port;
+} config_t;
 
-void start_tcp_server(int port);
+void set_server_config(const config_t* config);
+
+void *handle_client(void *arg);
 
 void start_leader_server(int port);
 

@@ -12,9 +12,14 @@
 
 #define MAX_FOLLOWERS 10
 
+static config_t server_config;
 int connected_clients = 0;
 
 int followers[MAX_FOLLOWERS] = {0};
+
+void set_server_config(const config_t *config) {
+    memcpy(&server_config, config, sizeof(config_t));
+}
 
 static const char *get_shared_secret() {
     const char *secret = getenv("KEYVAL_SECRET");
@@ -43,6 +48,14 @@ static void add_follower_to_list(int socket_fd) {
     close(socket_fd);
 }
 
+static void broadcast_to_followers(const char *message) {
+    for (int i = 0; i < MAX_FOLLOWERS; i++) {
+        if (followers[i] != 0) {
+            send(followers[i], message, strlen(message), 0);
+        }
+    }
+}
+
 static void drop_connection_attempt(int socket_fd, const char *reason) {
     connected_clients--;
     printf("Dropping connection for client %d, connected clients: %d\n", socket_fd, connected_clients);
@@ -53,7 +66,7 @@ static void drop_connection_attempt(int socket_fd, const char *reason) {
 void *handle_client(void *arg) {
     char buf[BUFFER_SIZE];
     char handshake_msg[128];
-    int client_fd = (int)(intptr_t)arg;
+    int client_fd = (int)(intptr_t) arg;
 
     // Check for handshake message
     ssize_t bytes_received = recv(client_fd, handshake_msg, sizeof(handshake_msg), 0);
@@ -98,18 +111,29 @@ void *handle_client(void *arg) {
         printf("Data received: %s", buf);
         
         command_response_t cmd_res = handle_command(buf);
-        send(client_fd, cmd_res.response, strlen(cmd_res.response), 0);
-        
-        if (cmd_res.should_close) {
+
+        if (cmd_res.type == CLOSE) {
             connected_clients--;
             printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
             close(client_fd);
             return NULL;
         }
+
+        // check if it's a write operation and broadcast to followers from leader
+        if (cmd_res.type == PUT || cmd_res.type == DELETE) {
+            if (strcmp(server_config.role, "leader") != 0) {
+                strcpy(cmd_res.response, "WRITE_NOT_ALLOWED\n");
+                send(client_fd, cmd_res.response, strlen(cmd_res.response), 0);
+                continue;
+            }
+            broadcast_to_followers(buf);
+        }
+
+        send(client_fd, cmd_res.response, strlen(cmd_res.response), 0);
     }
 }
 
-void start_tcp_server(int port) {
+static void start_tcp_server(int port) {
     struct sockaddr_in serveraddr;
     memset(&serveraddr, 0, sizeof(serveraddr));
 
@@ -157,7 +181,7 @@ void start_tcp_server(int port) {
         printf("Client %s:%d connected, total connected clients: %d\n", client_ip, ntohs(addr.sin_port), connected_clients);
 
         pthread_t tid;
-        pthread_create(&tid, NULL, handle_client, (void *)(intptr_t)client_fd);
+        pthread_create(&tid, NULL, handle_client, (void *)(intptr_t) client_fd);
         pthread_detach(tid);
     }
 
@@ -207,8 +231,32 @@ int connect_with_leader_server(const char *leader_host, int leader_port) {
     return socket_fd;
 }
 
+static void *handle_leader(void *arg) {
+    int socket_fd = (int)(intptr_t) arg;
+    char buf[BUFFER_SIZE];
+    printf("Opening communication channel with leader\n");
+    while (1) {
+        memset(buf, 0, BUFFER_SIZE);
+        ssize_t bytes_received = recv(socket_fd, buf, sizeof(buf), 0);
+        if (bytes_received <= 0) {
+            perror("Closing connection with leader");
+            close(socket_fd);
+            exit(EXIT_FAILURE);
+        }
+        
+        printf("Received msg from leader: %s\n", buf);
+    }
+    return NULL;
+}
+
 void start_follower_server(int port, const char *leader_host, int leader_port) {
     int leader_socket_fd = connect_with_leader_server(leader_host, leader_port);
+
+    // Spawn new thread for leader communication
+    pthread_t tid;
+    pthread_create(&tid, NULL, handle_leader, (void *)(intptr_t) leader_socket_fd);
+    pthread_detach(tid);
+
     start_tcp_server(port);
     close(leader_socket_fd);
 }

@@ -7,13 +7,14 @@
 
 command_response_t handle_close(void) {
     command_response_t response = {0};
+    response.type = CLOSE;
     strncpy(response.response, "BYE\n", BUFFER_SIZE);
-    response.should_close = 1;
     return response;
 }
 
 command_response_t handle_put(const char *command) {
     command_response_t response = {0};
+    response.type = PUT;
     char buffer[BUFFER_SIZE];
     strncpy(buffer, command, BUFFER_SIZE);
     
@@ -43,6 +44,7 @@ command_response_t handle_put(const char *command) {
 
 command_response_t handle_get(const char *command) {
     command_response_t response = {0};
+    response.type = GET;
     char buffer[BUFFER_SIZE];
     strncpy(buffer, command, BUFFER_SIZE);
     
@@ -66,6 +68,7 @@ command_response_t handle_get(const char *command) {
 
 command_response_t handle_delete(const char *command) {
     command_response_t response = {0};
+    response.type = DELETE;
     char buffer[BUFFER_SIZE];
     strncpy(buffer, command, BUFFER_SIZE);
     
@@ -88,6 +91,7 @@ command_response_t handle_delete(const char *command) {
 
 static command_response_t handle_invalid_command(void) {
     command_response_t response = {0};
+    response.type = INVALID;
     printf("Invalid command\n");
     strncpy(response.response, "Invalid command\n", BUFFER_SIZE);
     return response;

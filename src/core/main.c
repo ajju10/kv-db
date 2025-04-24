@@ -3,13 +3,6 @@
 #include "../server/server.h"
 #include "datastore.h"
 
-typedef struct config {
-    char role[10];
-    int port;
-    char leader_host[64];
-    int leader_port;
-} config_t;
-
 void parse_args(int argc, char *argv[], config_t *config) {
     strcpy(config->role, "leader");
     config->port = 5000;
@@ -39,6 +32,10 @@ int main(int argc, char *argv[]) {
 
     config_t config = {0};
     parse_args(argc, argv, &config);
+    
+    // Set the server configuration before starting
+    set_server_config((const config_t *) &config);
+    
     if (strcmp(config.role, "leader") == 0) {
         printf("Starting as leader on port %d\n", config.port);
         kv_init();
