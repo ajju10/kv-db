@@ -1,10 +1,8 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -I$(SRC_DIR)/core -I.
+CFLAGS = -Wall -Wextra -I$(SRC_DIR)/core -I. -g
 
 BUILD_DIR = build
 SRC_DIR = src
-LOG_DIR = logs
-TEST_DIR = tests
 
 # Source files
 CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
@@ -23,7 +21,7 @@ TARGET = $(BUILD_DIR)/keyval
 all: dirs $(TARGET)
 
 dirs:
-	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/server $(BUILD_DIR)/logs $(LOG_DIR)
+	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/server $(BUILD_DIR)/logs
 
 $(TARGET): $(OBJ)
 	$(CC) -o $@ $^
@@ -36,7 +34,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 run: $(TARGET)
 	./$(TARGET)
 
-# Clean only build artifacts, preserve logs
+# Clean only build artifacts
 clean:
 	rm -rf $(BUILD_DIR)/*
-	@echo "Cleaned build artifacts (logs preserved)"
+	@echo "Cleaned build artifacts"
