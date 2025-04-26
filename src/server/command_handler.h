@@ -3,9 +3,22 @@
 
 #define BUFFER_SIZE 1024
 
+typedef enum command_type {
+    GET,
+    PUT,
+    DELETE,
+    CLOSE,
+    INVALID
+} command_type_t;
+
+typedef struct command_data {
+    char key[BUFFER_SIZE];
+    char value[BUFFER_SIZE];
+} command_data_t;
+
 typedef struct command_response {
-    char response[BUFFER_SIZE];
-    int should_close;
+    command_type_t type;
+    command_data_t data;
 } command_response_t;
 
 command_response_t handle_command(const char *command);
