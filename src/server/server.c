@@ -147,7 +147,7 @@ void *handle_client(void *arg) {
         }
 
         if (cmd_res.type == INVALID) {
-            strcpy(response, "Invalid command\n");
+            strcpy(response, "INVALID_COMMAND\n");
             send(client_fd, response, strlen(response), 0);
             continue;
         }
