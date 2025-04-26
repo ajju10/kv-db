@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -I$(SRC_DIR)/core
+CFLAGS = -Wall -Wextra -I$(SRC_DIR)/core -I.
+
 BUILD_DIR = build
 SRC_DIR = src
 LOG_DIR = logs
@@ -8,7 +9,8 @@ TEST_DIR = tests
 # Source files
 CORE_SRC = $(wildcard $(SRC_DIR)/core/*.c)
 SERVER_SRC = $(wildcard $(SRC_DIR)/server/*.c)
-ALL_SRC = $(CORE_SRC) $(SERVER_SRC)
+LOG_SRC = $(wildcard $(SRC_DIR)/logs/*.c)
+ALL_SRC = $(CORE_SRC) $(SERVER_SRC) $(LOG_SRC)
 
 # Object files
 OBJ = $(ALL_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
@@ -21,7 +23,7 @@ TARGET = $(BUILD_DIR)/keyval
 all: dirs $(TARGET)
 
 dirs:
-	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/utils $(LOG_DIR)
+	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/server $(BUILD_DIR)/logs $(LOG_DIR)
 
 $(TARGET): $(OBJ)
 	$(CC) -o $@ $^

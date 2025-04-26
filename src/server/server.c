@@ -7,8 +7,10 @@
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
+#include <sys/stat.h>
 #include "server.h"
 #include "command_handler.h"
+#include "../logs/log.h"
 
 #define MAX_FOLLOWERS 10
 
@@ -88,6 +90,12 @@ void *handle_client(void *arg) {
     if (strncmp("HELLO CLIENT\n", handshake_msg, 13) == 0) {
         printf("Client handshake completed\n");
     } else if (strncmp("HELLO FOLLOWER|", handshake_msg, 15) == 0) {
+        if (strcmp(server_config.role, "follower") == 0) {
+            printf("I am not a leader, cannot accept follower connection\n");
+            drop_connection_attempt(client_fd, "CANNOT_ACCEPT_FOLLOWER_CONNECTION\n");
+            return NULL;
+        }
+
         char *hello_msg = strchr(handshake_msg, '|') + 1;
         int follower_id = 0;
         while (*hello_msg && *hello_msg != ':') {
@@ -95,12 +103,10 @@ void *handle_client(void *arg) {
             hello_msg++;
         }
         hello_msg++;
-        printf("Follower id: %d, ", follower_id);
 
         const char *follower_secret = get_shared_secret();
         char *token = hello_msg;
         token[strcspn(token, "\n")] = '\0';
-        printf("Follower token: %s\n", token);
         if (strcmp(token, follower_secret) == 0) {
             printf("Follower authenticated, handshake completed\n");
             add_follower_to_list(follower_id, client_fd);
@@ -129,25 +135,57 @@ void *handle_client(void *arg) {
         printf("Data received: %s", buf);
         
         command_response_t cmd_res = handle_command(buf);
+        char response[BUFFER_SIZE];
 
         if (cmd_res.type == CLOSE) {
+            strcpy(response, "BYE\n");
+            send(client_fd, response, strlen(response), 0);
             connected_clients--;
             printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
             close(client_fd);
             return NULL;
         }
 
-        // check if it's a write operation and broadcast to followers from leader
-        if (cmd_res.type == PUT || cmd_res.type == DELETE) {
-            if (strcmp(server_config.role, "leader") != 0) {
-                strcpy(cmd_res.response, "WRITE_NOT_ALLOWED\n");
-                send(client_fd, cmd_res.response, strlen(cmd_res.response), 0);
-                continue;
-            }
-            broadcast_to_followers(buf);
+        if (cmd_res.type == INVALID) {
+            strcpy(response, "Invalid command\n");
+            send(client_fd, response, strlen(response), 0);
+            continue;
         }
 
-        send(client_fd, cmd_res.response, strlen(cmd_res.response), 0);
+        // check if it's a write operation and validate against server role
+        if (cmd_res.type == PUT || cmd_res.type == DELETE) {
+            if (strcmp(server_config.role, "leader") != 0) {
+                strcpy(response, "WRITE_NOT_ALLOWED\n");
+                send(client_fd, response, strlen(response), 0);
+                continue;
+            }
+
+            write_to_data_file(buf);
+            broadcast_to_followers(buf);
+
+            if (cmd_res.type == PUT) {
+                if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
+                    strcpy(response, "ERROR\n");
+                } else {
+                    strcpy(response, "OK\n");
+                }
+            } else {
+                if (kv_delete(cmd_res.data.key) == 1) {
+                    strcpy(response, "NOT_FOUND\n");
+                } else {
+                    strcpy(response, "OK\n");
+                }
+            }
+        } else if (cmd_res.type == GET) {
+            char *value = kv_get(cmd_res.data.key);
+            if (value[0] == '\0') {
+                strncpy(response, "\n", BUFFER_SIZE);
+            } else {
+                snprintf(response, BUFFER_SIZE, "%s\n", value);
+            }
+        }
+
+        send(client_fd, response, strlen(response), 0);
     }
 }
 
@@ -207,6 +245,13 @@ static void start_tcp_server(int port) {
 }
 
 void start_leader_server(int port) {
+    mkdir(DATA_DIRECTORY, 0755);
+
+    char log_path[128];
+    snprintf(log_path, sizeof(log_path), "%s/%s", DATA_DIRECTORY, LEADER_DATA_FILE);
+    replay_data_file(log_path);
+    open_data_file(log_path);
+
     start_tcp_server(port);
 }
 
@@ -263,6 +308,38 @@ static void *handle_leader(void *arg) {
         }
         
         printf("Received msg from leader: %s\n", buf);
+
+        // Parse command first to validate
+        command_response_t cmd_res = handle_command(buf);
+        if (cmd_res.type == INVALID) {
+            printf("Invalid command received from leader, ignoring: %s\n", buf);
+            continue;
+        }
+
+        // Only write and execute valid PUT/DELETE commands
+        switch (cmd_res.type) {
+            case PUT:
+                write_to_data_file(buf);
+                if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
+                    printf("Error executing PUT command from leader\n");
+                }
+                break;
+
+            case DELETE:
+                write_to_data_file(buf);
+                if (kv_delete(cmd_res.data.key) != 0) {
+                    printf("Error executing DELETE command from leader\n");
+                }
+                break;
+
+            case GET:
+            case CLOSE:
+                break;
+
+            default:
+                printf("Unexpected command type from leader\n");
+                break;
+        }
     }
     return NULL;
 }
@@ -273,10 +350,16 @@ void start_follower_server(int port, const char *leader_host, int leader_port, i
         exit(EXIT_FAILURE);
     }
 
-    int leader_socket_fd = connect_with_leader_server(leader_host, leader_port, id);
-
-    // Spawn new thread for leader communication
     pthread_t tid;
+
+    mkdir(DATA_DIRECTORY, 0755);
+
+    char log_path[128];
+    snprintf(log_path, sizeof(log_path), "%s/follower_%d.log", DATA_DIRECTORY, id);
+    replay_data_file(log_path);
+    open_data_file(log_path);
+
+    int leader_socket_fd = connect_with_leader_server(leader_host, leader_port, id);
     pthread_create(&tid, NULL, handle_leader, (void *)(intptr_t) leader_socket_fd);
     pthread_detach(tid);
 

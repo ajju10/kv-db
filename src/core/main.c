@@ -35,15 +35,11 @@ int main(int argc, char *argv[]) {
 
     config_t config = {0};
     parse_args(argc, argv, &config);
-    
-    // Set the server configuration before starting
+
     set_server_config((const config_t *) &config);
-    
     if (strcmp(config.role, "leader") == 0) {
         printf("Starting as leader on port %d\n", config.port);
-        kv_init();
         start_leader_server(config.port);
-        kv_shutdown();
     } else {
         printf("Starting as follower on port %d, connecting to leader at %s:%d\n", config.port, config.leader_host, config.leader_port);
         start_follower_server(config.port, config.leader_host, config.leader_port, config.id);

@@ -8,7 +8,6 @@
 command_response_t handle_close(void) {
     command_response_t response = {0};
     response.type = CLOSE;
-    strncpy(response.response, "BYE\n", BUFFER_SIZE);
     return response;
 }
 
@@ -26,18 +25,15 @@ command_response_t handle_put(const char *command) {
         tokens = strtok(NULL, "\n");
         if (tokens) {
             value = tokens;
-            if (kv_put(key, value) == 0) {
-                strncpy(response.response, "OK\n", BUFFER_SIZE);
-            } else {
-                strncpy(response.response, "ERROR\n", BUFFER_SIZE);
-            }
+            strncpy(response.data.key, key, BUFFER_SIZE);
+            strncpy(response.data.value, value, BUFFER_SIZE);
         } else {
             printf("Value missing for PUT command\n");
-            snprintf(response.response, BUFFER_SIZE, "Missing value for key: %s\n", key);
+            response.type = INVALID;
         }
     } else {
         printf("Invalid command got: %s\n", command);
-        strncpy(response.response, "Invalid command expected PUT <key> <value>\n", BUFFER_SIZE);
+        response.type = INVALID;
     }
     return response;
 }
@@ -53,15 +49,10 @@ command_response_t handle_get(const char *command) {
     tokens = strtok(NULL, " \n");
     if (tokens) {
         key = tokens;
-        char *value = kv_get(key);
-        if (value[0] == '\0') {
-            strncpy(response.response, "\n", BUFFER_SIZE);
-        } else {
-            snprintf(response.response, BUFFER_SIZE, "%s\n", value);
-        }
+        strncpy(response.data.key, key, BUFFER_SIZE);
     } else {
         printf("Invalid command got: %s\n", command);
-        strncpy(response.response, "Invalid command expected GET <key>\n", BUFFER_SIZE);
+        response.type = INVALID;
     }
     return response;
 }
@@ -77,14 +68,10 @@ command_response_t handle_delete(const char *command) {
     tokens = strtok(NULL, " \n");
     if (tokens) {
         key = tokens;
-        if (kv_delete(key) == 1) {
-            strncpy(response.response, "NOT_FOUND\n", BUFFER_SIZE);
-        } else {
-            strncpy(response.response, "OK\n", BUFFER_SIZE);
-        }
+        strncpy(response.data.key, key, BUFFER_SIZE);
     } else {
         printf("Invalid command got: %s\n", command);
-        strncpy(response.response, "Invalid command expected DELETE <key>\n", BUFFER_SIZE);
+        response.type = INVALID;
     }
     return response;
 }
@@ -93,7 +80,6 @@ static command_response_t handle_invalid_command(void) {
     command_response_t response = {0};
     response.type = INVALID;
     printf("Invalid command\n");
-    strncpy(response.response, "Invalid command\n", BUFFER_SIZE);
     return response;
 }
 
