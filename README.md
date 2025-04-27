@@ -123,6 +123,16 @@ Response: NOT_FOUND\n
 - Server responds with "OK" followed by a newline if the key was found and successfully deleted
 - Server responds with "NOT_FOUND" followed by a newline if the key doesn't exist
 
+#### PING
+Tests the connection to the server.
+```
+Command: PING\n
+Response: PONG\n
+```
+- The command must end with a newline character
+- Server responds with "PONG" followed by a newline
+- Used to check if the server is responsive
+
 #### CLOSE
 Closes the current connection to the server.
 ```

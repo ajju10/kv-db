@@ -8,6 +8,7 @@ typedef enum command_type {
     PUT,
     DELETE,
     CLOSE,
+    PING,
     INVALID
 } command_type_t;
 

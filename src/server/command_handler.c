@@ -92,6 +92,10 @@ command_response_t handle_command(const char *command) {
         return handle_get(command);
     } else if (strncmp(command, "DELETE", 6) == 0) {
         return handle_delete(command);
+    } else if (strncmp(command, "PING", 4) == 0) {
+        command_response_t response = {0};
+        response.type = PING;
+        return response;
     }
     return handle_invalid_command();
 }

@@ -31,6 +31,7 @@ int main(int argc, char *argv[]) {
     printf("  PUT <key> <value> - Store a key-value pair\n");
     printf("  GET <key> - Retrieve the value for a key\n");
     printf("  DELETE <key> - Remove a key-value pair\n");
+    printf("  PING - Test server connection\n");
     printf("  CLOSE - Close the connection\n");
 
     config_t config = {0};
