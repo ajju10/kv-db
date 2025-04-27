@@ -42,6 +42,23 @@ static const char *get_shared_secret() {
     return secret;
 }
 
+static int validate_follower_connection(int id, const char *token) {
+    for (int i = 0; i < MAX_FOLLOWERS; i++) {
+        if (followers[i].id == id) {
+            printf("Follower connection rejected: ID %d is already taken\n", id);
+            return -1;
+        }
+    }
+
+    const char *follower_secret = get_shared_secret();
+    if (strncmp(token, follower_secret, strlen(follower_secret)) != 0) {
+        printf("Follower connection rejected: Invalid token\n");
+        return -2;
+    }
+
+    return 0;
+}
+
 static void send_logs_to_follower(int socket_fd) {
     char log_path[128];
     char buf[BUFFER_SIZE] = {0};
@@ -148,14 +165,18 @@ void *handle_client(void *arg) {
         }
         hello_msg++;
 
-        const char *follower_secret = get_shared_secret();
         char *token = hello_msg;
         token[strcspn(token, "\n")] = '\0';
-        if (strcmp(token, follower_secret) == 0) {
+        int validation_result = validate_follower_connection(follower_id, token);
+        if (validation_result == 0) {
             printf("Follower authenticated, handshake completed\n");
             add_follower_to_list(follower_id, client_fd);
             return NULL;
-        } else {
+        } else if (validation_result == -1) {
+            printf("Follower rejected: ID already taken\n");
+            drop_connection_attempt(client_fd, "ID_ALREADY_TAKEN\n");
+            return NULL;
+        } else if (validation_result == -2) {
             printf("Follower rejected: invalid secret key\n");
             drop_connection_attempt(client_fd, "INVALID_SECRET_KEY\n");
             return NULL;
@@ -419,12 +440,12 @@ static void *handle_leader(void *arg) {
             exit(EXIT_FAILURE);
         }
         
-        printf("Received msg from leader: %s\n", buf);
+        printf("Received msg from leader: %s", buf);
 
         // Parse command first to validate
         command_response_t cmd_res = handle_command(buf);
         if (cmd_res.type == INVALID) {
-            printf("Invalid command received from leader, ignoring: %s\n", buf);
+            printf("Invalid command received from leader, ignoring: %s", buf);
             continue;
         }
 
@@ -478,7 +499,7 @@ void start_follower_server(int port, const char *leader_host, int leader_port, i
 
 static void start_leader_handshake(int socket_fd) {
     char handshake_res[128] = {0};
-    strcpy(handshake_res, "OK\n");
+    strcpy(handshake_res, "HELLO LEADER\n");
     send(socket_fd, handshake_res, sizeof(handshake_res), 0);
     send_logs_to_follower(socket_fd);
 }
@@ -494,7 +515,7 @@ static void start_follower_handshake(int socket_fd, int follower_id) {
 
     memset(handshake_buf, 0, sizeof(handshake_buf));
     recv(socket_fd, handshake_buf, sizeof(handshake_buf), 0);
-    if (strncmp("OK\n", handshake_buf, 3) != 0) {
+    if (strncmp("HELLO LEADER\n", handshake_buf, 13) != 0) {
         fprintf(stderr, "Failed to connect with leader shutting down. Reason: %s", handshake_buf);
         exit(EXIT_FAILURE);
     }
