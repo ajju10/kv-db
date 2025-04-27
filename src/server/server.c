@@ -131,6 +131,7 @@ void *handle_client(void *arg) {
     }
 
     if (strncmp("HELLO CLIENT\n", handshake_msg, 13) == 0) {
+        send(client_fd, "HELLO SERVER\n", 13, 0);
         printf("Client handshake completed\n");
     } else if (strncmp("HELLO FOLLOWER|", handshake_msg, 15) == 0) {
         if (strcmp(server_config.role, "follower") == 0) {
@@ -311,6 +312,7 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
     }
 
     char sync_buf[BUFFER_SIZE] = {0};
+    char command[BUFFER_SIZE] = {0};
     
     // send the SYNC_READY msg
     strcpy(sync_buf, "SYNC_READY\n");
@@ -318,7 +320,7 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
 
     // receive SYNC_START msg from leader
     memset(sync_buf, 0, BUFFER_SIZE);
-    ssize_t bytes_received = recv(socket_fd, sync_buf, BUFFER_SIZE, 0);
+    ssize_t bytes_received = recv(socket_fd, sync_buf, 11, 0);
     if (bytes_received <= 0 || strncmp(sync_buf, "SYNC_START\n", 11) != 0) {
         fprintf(stderr, "Failed to receive SYNC_START message from leader\n");
         fclose(temp_log);
@@ -328,7 +330,6 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
 
     printf("Received SYNC_START message from leader, starting syncing...\n");
     
-    // Write log entries to temporary file
     while (1) {
         memset(sync_buf, 0, BUFFER_SIZE);
         bytes_received = recv(socket_fd, sync_buf, BUFFER_SIZE, 0);
@@ -339,40 +340,43 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
             exit(EXIT_FAILURE);
         }
 
-        if (strncmp(sync_buf, "SYNC_FINISHED\n", 14) == 0) {
-            printf("Received SYNC_FINISHED message from leader\n");
-            break;
-        }
+        ssize_t cmd_index = 0;
+        for (size_t i = 0; i < strlen(sync_buf); i++) {
+            command[cmd_index++] = sync_buf[i];
+            if (sync_buf[i] == '\n') {
+                if (strncmp(command, "SYNC_FINISHED", 13) == 0) {
+                    printf("Received SYNC_FINISHED message from leader\n");
+                    fclose(temp_log);
+                    if (rename(temp_log_file, log_path) != 0) {
+                        perror("Error replacing old log file with new one");
+                        remove(temp_log_file);
+                        exit(EXIT_FAILURE);
+                    }
 
-        fprintf(temp_log, "%s", sync_buf);
-        fflush(temp_log);
+                    printf("Synced with leader, starting server...\n");
+                    return;
+                }
 
-        command_response_t cmd_res = handle_command(sync_buf);
-        if (cmd_res.type == PUT || cmd_res.type == DELETE) {
-            if (cmd_res.type == PUT) {
-                if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
-                    fprintf(stderr, "Error executing PUT command during sync: key=%s, value=%s\n", cmd_res.data.key, cmd_res.data.value);
+                command_response_t cmd_res = handle_command(command);
+                if (cmd_res.type == PUT || cmd_res.type == DELETE) {
+                    if (cmd_res.type == PUT) {
+                        fprintf(temp_log, "PUT %s %s\n", cmd_res.data.key, cmd_res.data.value);
+                        if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
+                            fprintf(stderr, "Error executing PUT command during sync: key=%s, value=%s\n", cmd_res.data.key, cmd_res.data.value);
+                        }
+                    } else if (cmd_res.type == DELETE) {
+                        fprintf(temp_log, "DELETE %s\n", cmd_res.data.key);
+                        if (kv_delete(cmd_res.data.key) != 0) {
+                            fprintf(stderr, "Error executing DELETE command during sync: key=%s\n", cmd_res.data.key);
+                        }
+                    }
+                    fflush(temp_log);
                 }
-            } else if (cmd_res.type == DELETE) {
-                if (kv_delete(cmd_res.data.key) != 0) {
-                    fprintf(stderr, "Error executing DELETE command during sync: key=%s\n", cmd_res.data.key);
-                }
+                cmd_index = 0;
+                memset(command, 0, BUFFER_SIZE);
             }
-        } else {
-            fprintf(stderr, "Unexpected command type during sync, ignoring: %s\n", sync_buf);
         }
     }
-
-    // Close temp log before rename
-    fclose(temp_log);
-
-    if (rename(temp_log_file, log_path) != 0) {
-        perror("Error replacing old log file with new one");
-        remove(temp_log_file);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Synced with leader starting server...\n");
 }
 
 int connect_with_leader_server(const char *leader_host, int leader_port, int follower_id) {
