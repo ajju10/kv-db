@@ -67,6 +67,22 @@ HELLO CLIENT
 
 Then you can start sending commands.
 
+### Handshakes
+
+#### Client Handshake
+```
+Client: HELLO CLIENT\n
+Server: HELLO SERVER\n
+```
+After successful handshake, client can start sending commands.
+
+#### Follower Handshake
+```
+Follower: HELLO FOLLOWER|<id>:<secret_key>\n
+Leader: HELLO LEADER\n
+```
+After successful handshake, leader initiates the sync process.
+
 ## Protocol Specification
 
 This document describes the protocol for interacting with the key-value store server.

@@ -42,6 +42,23 @@ static const char *get_shared_secret() {
     return secret;
 }
 
+static int validate_follower_connection(int id, const char *token) {
+    for (int i = 0; i < MAX_FOLLOWERS; i++) {
+        if (followers[i].id == id) {
+            printf("Follower connection rejected: ID %d is already taken\n", id);
+            return -1;
+        }
+    }
+
+    const char *follower_secret = get_shared_secret();
+    if (strncmp(token, follower_secret, strlen(follower_secret)) != 0) {
+        printf("Follower connection rejected: Invalid token\n");
+        return -2;
+    }
+
+    return 0;
+}
+
 static void send_logs_to_follower(int socket_fd) {
     char log_path[128];
     char buf[BUFFER_SIZE] = {0};
@@ -131,6 +148,7 @@ void *handle_client(void *arg) {
     }
 
     if (strncmp("HELLO CLIENT\n", handshake_msg, 13) == 0) {
+        send(client_fd, "HELLO SERVER\n", 13, 0);
         printf("Client handshake completed\n");
     } else if (strncmp("HELLO FOLLOWER|", handshake_msg, 15) == 0) {
         if (strcmp(server_config.role, "follower") == 0) {
@@ -147,14 +165,18 @@ void *handle_client(void *arg) {
         }
         hello_msg++;
 
-        const char *follower_secret = get_shared_secret();
         char *token = hello_msg;
         token[strcspn(token, "\n")] = '\0';
-        if (strcmp(token, follower_secret) == 0) {
+        int validation_result = validate_follower_connection(follower_id, token);
+        if (validation_result == 0) {
             printf("Follower authenticated, handshake completed\n");
             add_follower_to_list(follower_id, client_fd);
             return NULL;
-        } else {
+        } else if (validation_result == -1) {
+            printf("Follower rejected: ID already taken\n");
+            drop_connection_attempt(client_fd, "ID_ALREADY_TAKEN\n");
+            return NULL;
+        } else if (validation_result == -2) {
             printf("Follower rejected: invalid secret key\n");
             drop_connection_attempt(client_fd, "INVALID_SECRET_KEY\n");
             return NULL;
@@ -311,6 +333,7 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
     }
 
     char sync_buf[BUFFER_SIZE] = {0};
+    char command[BUFFER_SIZE] = {0};
     
     // send the SYNC_READY msg
     strcpy(sync_buf, "SYNC_READY\n");
@@ -318,7 +341,7 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
 
     // receive SYNC_START msg from leader
     memset(sync_buf, 0, BUFFER_SIZE);
-    ssize_t bytes_received = recv(socket_fd, sync_buf, BUFFER_SIZE, 0);
+    ssize_t bytes_received = recv(socket_fd, sync_buf, 11, 0);
     if (bytes_received <= 0 || strncmp(sync_buf, "SYNC_START\n", 11) != 0) {
         fprintf(stderr, "Failed to receive SYNC_START message from leader\n");
         fclose(temp_log);
@@ -328,7 +351,6 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
 
     printf("Received SYNC_START message from leader, starting syncing...\n");
     
-    // Write log entries to temporary file
     while (1) {
         memset(sync_buf, 0, BUFFER_SIZE);
         bytes_received = recv(socket_fd, sync_buf, BUFFER_SIZE, 0);
@@ -339,40 +361,43 @@ static void sync_with_leader(int socket_fd, const char *log_path) {
             exit(EXIT_FAILURE);
         }
 
-        if (strncmp(sync_buf, "SYNC_FINISHED\n", 14) == 0) {
-            printf("Received SYNC_FINISHED message from leader\n");
-            break;
-        }
+        ssize_t cmd_index = 0;
+        for (size_t i = 0; i < strlen(sync_buf); i++) {
+            command[cmd_index++] = sync_buf[i];
+            if (sync_buf[i] == '\n') {
+                if (strncmp(command, "SYNC_FINISHED", 13) == 0) {
+                    printf("Received SYNC_FINISHED message from leader\n");
+                    fclose(temp_log);
+                    if (rename(temp_log_file, log_path) != 0) {
+                        perror("Error replacing old log file with new one");
+                        remove(temp_log_file);
+                        exit(EXIT_FAILURE);
+                    }
 
-        fprintf(temp_log, "%s", sync_buf);
-        fflush(temp_log);
+                    printf("Synced with leader, starting server...\n");
+                    return;
+                }
 
-        command_response_t cmd_res = handle_command(sync_buf);
-        if (cmd_res.type == PUT || cmd_res.type == DELETE) {
-            if (cmd_res.type == PUT) {
-                if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
-                    fprintf(stderr, "Error executing PUT command during sync: key=%s, value=%s\n", cmd_res.data.key, cmd_res.data.value);
+                command_response_t cmd_res = handle_command(command);
+                if (cmd_res.type == PUT || cmd_res.type == DELETE) {
+                    if (cmd_res.type == PUT) {
+                        fprintf(temp_log, "PUT %s %s\n", cmd_res.data.key, cmd_res.data.value);
+                        if (kv_put(cmd_res.data.key, cmd_res.data.value) != 0) {
+                            fprintf(stderr, "Error executing PUT command during sync: key=%s, value=%s\n", cmd_res.data.key, cmd_res.data.value);
+                        }
+                    } else if (cmd_res.type == DELETE) {
+                        fprintf(temp_log, "DELETE %s\n", cmd_res.data.key);
+                        if (kv_delete(cmd_res.data.key) != 0) {
+                            fprintf(stderr, "Error executing DELETE command during sync: key=%s\n", cmd_res.data.key);
+                        }
+                    }
+                    fflush(temp_log);
                 }
-            } else if (cmd_res.type == DELETE) {
-                if (kv_delete(cmd_res.data.key) != 0) {
-                    fprintf(stderr, "Error executing DELETE command during sync: key=%s\n", cmd_res.data.key);
-                }
+                cmd_index = 0;
+                memset(command, 0, BUFFER_SIZE);
             }
-        } else {
-            fprintf(stderr, "Unexpected command type during sync, ignoring: %s\n", sync_buf);
         }
     }
-
-    // Close temp log before rename
-    fclose(temp_log);
-
-    if (rename(temp_log_file, log_path) != 0) {
-        perror("Error replacing old log file with new one");
-        remove(temp_log_file);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Synced with leader starting server...\n");
 }
 
 int connect_with_leader_server(const char *leader_host, int leader_port, int follower_id) {
@@ -415,12 +440,12 @@ static void *handle_leader(void *arg) {
             exit(EXIT_FAILURE);
         }
         
-        printf("Received msg from leader: %s\n", buf);
+        printf("Received msg from leader: %s", buf);
 
         // Parse command first to validate
         command_response_t cmd_res = handle_command(buf);
         if (cmd_res.type == INVALID) {
-            printf("Invalid command received from leader, ignoring: %s\n", buf);
+            printf("Invalid command received from leader, ignoring: %s", buf);
             continue;
         }
 
@@ -474,7 +499,7 @@ void start_follower_server(int port, const char *leader_host, int leader_port, i
 
 static void start_leader_handshake(int socket_fd) {
     char handshake_res[128] = {0};
-    strcpy(handshake_res, "OK\n");
+    strcpy(handshake_res, "HELLO LEADER\n");
     send(socket_fd, handshake_res, sizeof(handshake_res), 0);
     send_logs_to_follower(socket_fd);
 }
@@ -490,7 +515,7 @@ static void start_follower_handshake(int socket_fd, int follower_id) {
 
     memset(handshake_buf, 0, sizeof(handshake_buf));
     recv(socket_fd, handshake_buf, sizeof(handshake_buf), 0);
-    if (strncmp("OK\n", handshake_buf, 3) != 0) {
+    if (strncmp("HELLO LEADER\n", handshake_buf, 13) != 0) {
         fprintf(stderr, "Failed to connect with leader shutting down. Reason: %s", handshake_buf);
         exit(EXIT_FAILURE);
     }
