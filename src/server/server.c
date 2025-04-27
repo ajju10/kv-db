@@ -200,11 +200,10 @@ void *handle_client(void *arg) {
         printf("Data received: %s", buf);
         
         command_response_t cmd_res = handle_command(buf);
-        char response[BUFFER_SIZE];
+        char response[BUFFER_SIZE] = {0};
 
         if (cmd_res.type == CLOSE) {
-            strcpy(response, "BYE\n");
-            send(client_fd, response, strlen(response), 0);
+            send(client_fd, "BYE\n", 4, 0);
             connected_clients--;
             printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
             close(client_fd);
@@ -212,16 +211,22 @@ void *handle_client(void *arg) {
         }
 
         if (cmd_res.type == INVALID) {
-            strcpy(response, "INVALID_COMMAND\n");
-            send(client_fd, response, strlen(response), 0);
+            send(client_fd, "INVALID_COMMAND\n", 16, 0);
             continue;
+        }
+
+        if (cmd_res.type == PING) {
+            send(client_fd, "PONG\n", 5, 0);
+            connected_clients--;
+            printf("Closing connection for client %d, connected clients: %d\n", client_fd, connected_clients);
+            close(client_fd);
+            return NULL;
         }
 
         // check if it's a write operation and validate against server role
         if (cmd_res.type == PUT || cmd_res.type == DELETE) {
             if (strcmp(server_config.role, "leader") != 0) {
-                strcpy(response, "WRITE_NOT_ALLOWED\n");
-                send(client_fd, response, strlen(response), 0);
+                send(client_fd, "WRITE_NOT_ALLOWED\n", 18, 0);
                 continue;
             }
 
