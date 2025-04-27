@@ -104,22 +104,24 @@ Retrieves the value associated with a given key.
 ```
 Command: GET key\n
 Response: value\n
+Response: NOT_FOUND\n
 ```
 - The key must be a string
 - The command must end with a newline character
-- Server responds with the stored value followed by a newline
-- If the key doesn't exist, an empty line is returned
+- Server responds with the stored value followed by a newline if the key exists
+- Server responds with "NOT_FOUND" followed by a newline if the key doesn't exist
 
 #### DELETE
 Removes a key-value pair from the store.
 ```
 Command: DELETE key\n
+Response: OK\n
 Response: NOT_FOUND\n
 ```
 - The key must be a string
 - The command must end with a newline character
+- Server responds with "OK" followed by a newline if the key was found and successfully deleted
 - Server responds with "NOT_FOUND" followed by a newline if the key doesn't exist
-- On successful deletion, returns "OK" followed by a newline
 
 #### CLOSE
 Closes the current connection to the server.

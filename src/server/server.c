@@ -244,7 +244,7 @@ void *handle_client(void *arg) {
         } else if (cmd_res.type == GET) {
             char *value = kv_get(cmd_res.data.key);
             if (value[0] == '\0') {
-                strncpy(response, "\n", BUFFER_SIZE);
+                strcpy(response, "NOT_FOUND\n");
             } else {
                 snprintf(response, BUFFER_SIZE, "%s\n", value);
             }
